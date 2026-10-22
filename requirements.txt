@@ -1,0 +1,3 @@
+watchdog==6.0.0
+rich==15.0.0
+pytest==9.1.1
