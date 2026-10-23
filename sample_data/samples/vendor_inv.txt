@@ -1,0 +1,7 @@
+Invoice for Freelance Consulting Services
+Invoice #2024-104
+Billed To: Apex Innovations LLC
+Services Rendered: Python backend development and API performance tuning
+Hours Worked: 30 hours @ $95/hr
+Total Amount: $2,850.00
+Payment terms: Net 30 days. Direct bank deposit preferred.

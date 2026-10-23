@@ -1,0 +1,11 @@
+Acme Cloud Services - Monthly Billing Statement
+Invoice Number: INV-2024-0892
+Billing Period: March 1, 2024 - March 31, 2024
+Customer ID: CUST-449102
+
+Description: High Performance Compute Instances & Cloud Storage
+Subtotal: $135.00
+Sales Tax (8.25%): $11.14
+Total Amount Due: $146.14
+Payment Due Date: April 15, 2024
+Please remit payment via wire transfer or online portal.

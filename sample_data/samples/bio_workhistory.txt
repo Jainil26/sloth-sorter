@@ -1,0 +1,10 @@
+Curriculum Vitae: Emily Watson
+Product Manager & Technical Lead
+
+Professional Background:
+Senior Product Manager at Microsoft (2019 - Present)
+Owned developer platform roadmap and delivered developer CLI tools used by 500k developers.
+Associate PM at Atlassian (2017 - 2019)
+
+Education:
+MBA, Harvard Business School; B.S. Electrical Engineering, MIT.

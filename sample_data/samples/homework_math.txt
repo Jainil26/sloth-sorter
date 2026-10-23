@@ -1,0 +1,6 @@
+MATH 215: Linear Algebra Homework Assignment 6
+Due: Wednesday at the start of class.
+Questions:
+1. Find eigenvalues and eigenvectors for the given 3x3 symmetric matrix.
+2. Determine whether the vector space is orthogonal under the standard inner product.
+3. Show all work and steps clearly for full credit.

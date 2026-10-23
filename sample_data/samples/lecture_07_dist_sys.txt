@@ -1,0 +1,9 @@
+Lecture 7: Consensus in Distributed Systems
+Course: Distributed Computing Systems
+Reading: Chapter 5 of Distributed Systems Textbook
+
+Topics Covered:
+1. Two-phase commit vs three-phase commit protocols.
+2. Paxos consensus algorithm: proposers, acceptors, learners.
+3. Raft consensus: leader election, log replication, and safety guarantees.
+Study questions and key concepts review for upcoming midterm exam.

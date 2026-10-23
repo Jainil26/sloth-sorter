@@ -1,0 +1,8 @@
+CS 161: Design and Analysis of Algorithms
+Problem Set 2: Divide-and-Conquer and Dynamic Programming
+Due Date: Friday, October 27, 2024 at 11:59 PM PST
+
+Submission Instructions: Submit code and LaTeX solution PDF via Gradescope.
+Problem 1 (25 pts): Prove the recurrence relation T(n) = 3T(n/2) + O(n) using Master Theorem.
+Problem 2 (35 pts): Design an O(n log n) algorithm to compute the maximum subarray product.
+Problem 3 (40 pts): Implement the dynamic programming knapsack algorithm.

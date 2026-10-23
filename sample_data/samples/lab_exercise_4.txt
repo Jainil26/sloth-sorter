@@ -1,0 +1,6 @@
+Operating Systems Lab Assignment 4: Virtual Memory & Page Replacement
+Due: October 30, 2024
+Lab Exercise Deliverables:
+Write a C program that simulates FIFO, LRU, and Optimal page replacement algorithms.
+Measure page fault rates on varying memory frame allocations.
+Submit your lab report and source code to the university portal.

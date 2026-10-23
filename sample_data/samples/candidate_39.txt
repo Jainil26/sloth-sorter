@@ -1,0 +1,11 @@
+Curriculum Vitae: Alex Rivera
+Data Science and Machine Learning Engineer
+
+Work History:
+Machine Learning Specialist at Quant Analytics (2021-2024)
+Developed predictive models and NLP classification pipelines achieving 94% accuracy.
+Junior Data Analyst at FinTech Corp (2019-2021)
+
+Education:
+M.S. in Data Science, University of California Berkeley
+Core Competencies: Machine Learning, PyTorch, Scikit-learn, SQL, Statistics.
