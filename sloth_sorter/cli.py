@@ -9,6 +9,7 @@ Provides:
 
 import argparse
 from collections import Counter
+import csv
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -18,6 +19,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from sloth_sorter.config import DEFAULT_SIMILARITY_THRESHOLD
 from sloth_sorter.mover import ExecutionReport, execute_plan
 from sloth_sorter.planner import PlannedMove, build_plan
 from sloth_sorter.rules import classify
@@ -31,6 +33,20 @@ from sloth_sorter.undo_log import (
 )
 
 console = Console()
+
+
+def truncate_filename_str(text: str, max_chars: int = 40) -> str:
+    """Truncate a filename to max_chars with an ellipsis preserving the extension."""
+    if len(text) <= max_chars:
+        return text
+    dot_pos = text.rfind(".")
+    if dot_pos > 0 and len(text) - dot_pos <= 10:
+        ext = text[dot_pos:]
+        stem = text[:dot_pos]
+        allowed_stem = max_chars - len(ext) - 3
+        if allowed_stem > 3:
+            return f"{stem[:allowed_stem]}...{ext}"
+    return f"{text[:max_chars - 3]}..."
 
 
 def format_size(size_bytes: int) -> str:
@@ -63,12 +79,13 @@ def handle_scan(args: argparse.Namespace) -> int:
 
     console.print(f"[bold]Scanning:[/bold] {target} {'(recursive)' if args.recursive else ''}")
 
-    skipped_errors: List[str] = []
-
-    def on_error(p: Path, e: Exception) -> None:
-        skipped_errors.append(f"{p.name}: {e}")
-
-    files = scan_directory(target, recursive=args.recursive, on_error=on_error)
+    max_files = getattr(args, "max_files", None)
+    files = scan_directory(target, recursive=args.recursive, on_error=on_error, max_files=max_files)
+    if max_files is not None and len(files) >= max_files:
+        console.print(
+            f"[bold yellow]Warning:[/bold yellow] Reached file limit of {max_files} files. "
+            "Additional files were not scanned. (Use --max-files N to adjust limit)\n"
+        )
 
     if not files:
         console.print("[yellow]No eligible files found to organize.[/yellow]")
@@ -147,13 +164,20 @@ def handle_tidy(args: argparse.Namespace) -> int:
         return 1
 
     apply = getattr(args, "apply", False)
+    max_files = getattr(args, "max_files", None)
 
     scan_errors: List[str] = []
 
     def on_scan_error(p: Path, e: Exception) -> None:
         scan_errors.append(f"{p.name}: {e}")
 
-    files = scan_directory(target, recursive=args.recursive, on_error=on_scan_error)
+    files = scan_directory(target, recursive=args.recursive, on_error=on_scan_error, max_files=max_files)
+    if max_files is not None and len(files) >= max_files:
+        console.print(
+            f"[bold yellow]Warning:[/bold yellow] Reached file limit of {max_files} files. "
+            "Additional files were not scanned. (Use --max-files N to adjust limit)\n"
+        )
+
     moves = build_plan(
         files=files,
         target_dir=target,
@@ -166,34 +190,135 @@ def handle_tidy(args: argparse.Namespace) -> int:
         console.print("[bold green]Folder is already organized! No moves needed.[/bold green]")
         return 0
 
-    # 1. Preview Table: File | New Name | Category | Tier (rule / embedding) | Score
-    preview_table = Table(
-        title=f"Plan Preview ({len(moves)} file{'s' if len(moves) != 1 else ''})",
-        show_lines=False,
-    )
-    preview_table.add_column("File", style="cyan", no_wrap=True)
-    preview_table.add_column("New Name", style="bright_cyan")
-    preview_table.add_column("Category", style="green")
-    preview_table.add_column("Tier", style="yellow")
-    preview_table.add_column("Score", justify="right", style="magenta")
+    # Export full plan to CSV if --report is specified
+    report_arg = getattr(args, "report", None)
+    if report_arg:
+        report_path = Path(report_arg).resolve()
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(report_path, "w", newline="", encoding="utf-8-sig") as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["File", "New Name", "Category", "Tier", "Score", "Original Path", "Destination Path", "Notes"])
+            for m in moves:
+                orig = m.original_name or m.src.name
+                newn = m.new_name or m.dest.name
+                writer.writerow([
+                    orig,
+                    newn,
+                    m.category,
+                    m.tier,
+                    f"{m.score:.2f}" if m.score is not None else "",
+                    str(m.src),
+                    str(m.dest),
+                    "renamed (collision)" if m.collision_resolved else "",
+                ])
+        console.print(f"[bold green]Plan Report exported ({len(moves)} items):[/bold green] {report_path}\n")
 
-    for m in moves:
-        orig = m.original_name or m.src.name
-        newn = m.new_name or m.dest.name
-        if m.collision_resolved:
-            newn = f"{newn} [yellow](renamed)[/yellow]"
-        score_disp = f"{m.score:.2f}" if m.score is not None else "-"
-        preview_table.add_row(
-            orig,
-            newn,
-            m.category,
-            m.tier,
-            score_disp,
+    # 1. Preview Table: Row limiting (--limit and --all)
+    show_all = getattr(args, "all", False)
+    row_limit = getattr(args, "limit", 25)
+    display_limit = len(moves) if show_all else max(0, row_limit)
+    displayed_moves = moves[:display_limit]
+    remaining_count = len(moves) - len(displayed_moves)
+
+    # Check terminal width: compact format if width < 100
+    terminal_width = console.width
+    is_compact = terminal_width < 100
+
+    if is_compact:
+        console.print(f"[bold]Plan Preview ({len(moves)} file{'s' if len(moves) != 1 else ''}):[/bold]")
+        for m in displayed_moves:
+            orig = truncate_filename_str(m.original_name or m.src.name, 35)
+            newn = truncate_filename_str(m.new_name or m.dest.name, 35)
+            coll_note = " *(renamed)*" if m.collision_resolved else ""
+            score_note = f": {m.score:.2f}" if m.score is not None else ""
+            console.print(
+                f" • [cyan]{orig}[/cyan] -> [bright_cyan]{newn}[/bright_cyan]{coll_note} "
+                f"[[green]{m.category}[/green] | [yellow]{m.tier}{score_note}[/yellow]]"
+            )
+        if remaining_count > 0:
+            console.print(
+                f" [dim]... and {remaining_count} more files (use --all to show all, or --report plan.csv to export)[/dim]"
+            )
+        console.print()
+    else:
+        preview_table = Table(
+            title=f"Plan Preview ({len(moves)} file{'s' if len(moves) != 1 else ''})",
+            show_lines=False,
         )
+        preview_table.add_column("File", style="cyan", no_wrap=True, min_width=18, max_width=40, overflow="ellipsis")
+        preview_table.add_column("New Name", style="bright_cyan", no_wrap=True, min_width=18, max_width=40, overflow="ellipsis")
+        preview_table.add_column("Category", style="green", no_wrap=True, min_width=12)
+        preview_table.add_column("Tier", style="yellow", no_wrap=True, min_width=8)
+        preview_table.add_column("Score", justify="right", style="magenta", no_wrap=True, min_width=6)
 
-    console.print(preview_table)
+        for m in displayed_moves:
+            orig = truncate_filename_str(m.original_name or m.src.name, 40)
+            newn = truncate_filename_str(m.new_name or m.dest.name, 40)
+            if m.collision_resolved:
+                newn = f"{newn} [yellow](renamed)[/yellow]"
+            score_disp = f"{m.score:.2f}" if m.score is not None else "-"
+            preview_table.add_row(
+                orig,
+                newn,
+                m.category,
+                m.tier,
+                score_disp,
+            )
 
-    # 2. Summary count by category
+        console.print(preview_table)
+        if remaining_count > 0:
+            console.print(
+                f"[dim]... and {remaining_count} more (use --all to show all, or --report plan.csv to export)[/dim]\n"
+            )
+
+    # 2. "Needs review" section: embedding files with scores close to threshold (max 15 rows)
+    threshold = DEFAULT_SIMILARITY_THRESHOLD
+    borderline_moves = [
+        m for m in moves
+        if m.tier == "embedding" and m.score is not None and m.score <= (threshold + 0.10)
+    ]
+    if borderline_moves:
+        borderline_moves.sort(key=lambda m: m.score)
+        displayed_review = borderline_moves[:15]
+        if is_compact:
+            console.print(
+                f"[bold yellow]⚠️ Needs Review ({len(borderline_moves)} borderline file{'s' if len(borderline_moves) != 1 else ''} near threshold {threshold:.2f}):[/bold yellow]"
+            )
+            for rm in displayed_review:
+                orig = truncate_filename_str(rm.original_name or rm.src.name, 35)
+                console.print(
+                    f" ? [cyan]{orig}[/cyan] -> [green]{rm.category}[/green] "
+                    f"([magenta]{rm.score:.2f}[/magenta] vs threshold {threshold:.2f})"
+                )
+            if len(borderline_moves) > 15:
+                console.print(f" [dim]... and {len(borderline_moves) - 15} more borderline files[/dim]")
+            console.print()
+        else:
+            review_table = Table(
+                title=f"⚠️ Needs Review ({len(borderline_moves)} borderline file{'s' if len(borderline_moves) != 1 else ''} near threshold {threshold:.2f})",
+                show_lines=False,
+                border_style="yellow",
+            )
+            review_table.add_column("File", style="cyan", no_wrap=True, min_width=18, max_width=40, overflow="ellipsis")
+            review_table.add_column("Assigned Category", style="bold green", min_width=14)
+            review_table.add_column("Score", justify="right", style="bold magenta", min_width=8)
+            review_table.add_column("Threshold", justify="right", style="dim", min_width=8)
+            review_table.add_column("Status", style="yellow", min_width=10)
+
+            for rm in displayed_review:
+                orig = truncate_filename_str(rm.original_name or rm.src.name, 40)
+                review_table.add_row(
+                    orig,
+                    rm.category,
+                    f"{rm.score:.2f}",
+                    f"{threshold:.2f}",
+                    "Borderline",
+                )
+            console.print(review_table)
+            if len(borderline_moves) > 15:
+                console.print(f"[dim]... and {len(borderline_moves) - 15} more borderline files needing review.[/dim]\n")
+
+    # 3. Summary count by category
     category_counts = Counter(m.category for m in moves)
     category_sizes = Counter()
     for m in moves:
@@ -216,13 +341,27 @@ def handle_tidy(args: argparse.Namespace) -> int:
     if scan_errors:
         console.print(f"[yellow]Skipped {len(scan_errors)} files due to access permissions.[/yellow]")
 
-    # 3. Execution / Dry-Run report
+    # 4. Execution / Dry-Run report
     if not apply:
+        cmd_tokens = ["python -m sloth_sorter tidy", f'"{args.folder}"']
+        if getattr(args, "recursive", False):
+            cmd_tokens.append("--recursive")
+        if getattr(args, "smart", False):
+            cmd_tokens.append("--smart")
+        if getattr(args, "rename", False):
+            cmd_tokens.append("--rename")
+        if getattr(args, "model_path", None):
+            cmd_tokens.append(f'--model-path "{args.model_path}"')
+        if getattr(args, "max_files", None):
+            cmd_tokens.append(f"--max-files {args.max_files}")
+        cmd_tokens.append("--apply")
+        apply_command = " ".join(cmd_tokens)
+
         console.print(
             Panel(
                 "[bold yellow]DRY-RUN ONLY[/bold yellow]: No files were moved.\n"
                 "To execute these moves safely, re-run with [bold cyan]--apply[/bold cyan]:\n"
-                f"  python -m sloth_sorter tidy \"{args.folder}\" --apply",
+                f"  {apply_command}",
                 title="Status",
                 border_style="yellow",
             )
@@ -397,6 +536,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path or HuggingFace ID for Model2Vec model (default: minishlab/potion-base-8M)",
     )
+    scan_parser.add_argument(
+        "--max-files",
+        type=int,
+        default=None,
+        help="Maximum number of files to discover",
+    )
 
     # tidy
     tidy_parser = subparsers.add_parser("tidy", help="Organize files into category folders")
@@ -427,6 +572,31 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Path or HuggingFace ID for Model2Vec model (default: minishlab/potion-base-8M)",
+    )
+    tidy_parser.add_argument(
+        "--limit",
+        type=int,
+        default=25,
+        help="Maximum number of rows to preview in table (default: 25)",
+    )
+    tidy_parser.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        help="Show all rows in preview without truncation",
+    )
+    tidy_parser.add_argument(
+        "--report",
+        type=str,
+        default=None,
+        metavar="PLAN.CSV",
+        help="Export full organization plan to a CSV file (e.g. plan.csv)",
+    )
+    tidy_parser.add_argument(
+        "--max-files",
+        type=int,
+        default=None,
+        help="Maximum number of files to process",
     )
 
     # undo

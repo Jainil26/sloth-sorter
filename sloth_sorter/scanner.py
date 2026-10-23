@@ -51,6 +51,7 @@ def scan_directory(
     recursive: bool = False,
     config: Optional[Dict[str, Any]] = None,
     on_error: Optional[Callable[[Path, Exception], None]] = None,
+    max_files: Optional[int] = None,
 ) -> List[FileInfo]:
     """Scan a target directory and return a list of FileInfo objects.
 
@@ -59,12 +60,14 @@ def scan_directory(
         recursive: If True, recursively scan subdirectories (except category/ignored folders).
         config: Optional configuration dictionary. Uses defaults if None.
         on_error: Optional callback invoked when a file/dir cannot be accessed.
+        max_files: Optional maximum number of files to discover.
 
     Returns:
         List of FileInfo objects for files matching criteria.
     """
     cfg = config or get_default_config()
-    categories: Set[str] = {c.lower() for c in cfg.get("categories", [])}
+    all_cats = set(cfg.get("categories", [])) | set(cfg.get("smart_categories", []))
+    categories: Set[str] = {c.lower() for c in all_cats}
     ignored_exts: Set[str] = {
         e.lower() for e in cfg.get("ignored_extensions", set())
     }
@@ -92,9 +95,13 @@ def scan_directory(
         return False
 
     def _process_dir(current_dir: Path, current_depth: int) -> None:
+        if max_files is not None and len(results) >= max_files:
+            return
         try:
             with os.scandir(current_dir) as entries:
                 for entry in entries:
+                    if max_files is not None and len(results) >= max_files:
+                        break
                     try:
                         entry_path = Path(entry.path)
                         name_lower = entry.name.lower()
