@@ -17,6 +17,92 @@ DEFAULT_CATEGORIES: List[str] = [
     "Other",
 ]
 
+# Smart categories refined from Documents / Other by Tier 2
+SMART_CATEGORIES: List[str] = [
+    "Invoices",
+    "Resumes",
+    "Assignments",
+    "Reports",
+    "Study Material",
+    "Notes",
+    "Other",
+]
+
+# Prototype phrases for Model2Vec embedding centroids
+DEFAULT_PROTOTYPES: Dict[str, List[str]] = {
+    "Invoices": [
+        "invoice payment due total amount billing account receipt",
+        "electric utility bill payment due date invoice number total due",
+        "invoice for professional consulting services rendered hourly rate bill to customer",
+        "receipt of purchase payment confirmation order total credit card payment",
+        "monthly subscription statement billing balance due remittance",
+        "tax invoice commercial sales receipt items quantity unit price subtotal",
+        "final invoice overdue payment notification account summary please pay immediately",
+        "billing receipt customer invoice purchase order charges fee statement",
+    ],
+    "Resumes": [
+        "resume curriculum vitae work experience education skills employment history",
+        "software engineer resume technical skills python projects work experience bachelors",
+        "professional summary work history education certifications contact information",
+        "curriculum vitae research publications academic experience references skills",
+        "experience senior developer achievements qualifications education university degree",
+        "job application resume candidate profile skills summary career background",
+        "technical resume software developer experience programming languages education",
+        "curriculum vitae qualifications objective professional employment summary",
+    ],
+    "Assignments": [
+        "homework assignment problem set due date submission guidelines course",
+        "computer science programming assignment exercise question solutions score",
+        "student assignment project prompt grading rubric submission instructions",
+        "weekly homework assignment exercises answer sheet due next monday",
+        "final course project assignment problem statement deliverables rubric",
+        "lab assignment instructions exercise questions report submission",
+        "midterm assignment questions instructions student submission course",
+        "academic coursework assignment problem description due date syllabus",
+    ],
+    "Reports": [
+        "annual quarterly financial performance business report summary analysis",
+        "market research report executive summary findings data analysis conclusion",
+        "project progress status report milestone completion metrics overview",
+        "technical evaluation report investigation findings recommendations",
+        "audit report compliance review executive overview methodology results",
+        "monthly business operational performance report key metrics analysis",
+        "formal report research findings conclusions recommendations executive summary",
+        "annual company performance report strategic overview financial highlights",
+    ],
+    "Study Material": [
+        "lecture notes chapter slides presentation course study guide textbook",
+        "introduction to algorithms course syllabus reading material review notes",
+        "exam revision study notes key concepts formulas definitions guide",
+        "class lecture summary chapter outline study notes exam preparation",
+        "university course lecture slides topic overview study material",
+        "revision guide key terms concepts formulas practice questions",
+        "study notes syllabus exam review lecture summary course concepts",
+        "academic study guide lecture slides chapter summary key terms",
+    ],
+    "Notes": [
+        "meeting notes discussion action items summary key takeaways next steps",
+        "personal notes thoughts ideas todo list quick reminder draft",
+        "quick scratch notes brainstorming ideas thoughts outline",
+        "team sync meeting notes attendees action items decisions made",
+        "daily standup notes updates blockers todo list tasks",
+        "project planning notes ideas discussion bullet points draft",
+        "scratchpad informal notes thoughts todo list reminders draft",
+        "quick thoughts memo meeting summary action items follow up",
+    ],
+    "Other": [
+        "miscellaneous random file generic text unknown contents",
+        "temporary scratchpad undefined general note",
+        "unclassified content random words generic document",
+        "system log output debugging trace errors events",
+        "plain text snippet uncategorized data information",
+        "various notes and general documents with mixed topics",
+    ],
+}
+
+DEFAULT_SIMILARITY_THRESHOLD: float = 0.35
+DEFAULT_MODEL_NAME: str = "minishlab/potion-base-8M"
+
 # Case-insensitive extensions mapped to category
 DEFAULT_EXTENSION_MAP: Dict[str, str] = {
     # Images
@@ -174,8 +260,12 @@ def get_default_config() -> Dict[str, Any]:
     """Return a fresh copy of the default configuration."""
     return {
         "categories": list(DEFAULT_CATEGORIES),
+        "smart_categories": list(SMART_CATEGORIES),
         "extension_map": dict(DEFAULT_EXTENSION_MAP),
         "filename_patterns": list(DEFAULT_FILENAME_PATTERNS),
         "ignored_extensions": set(IGNORED_EXTENSIONS),
         "ignored_names": set(IGNORED_NAMES),
+        "prototypes": {k: list(v) for k, v in DEFAULT_PROTOTYPES.items()},
+        "similarity_threshold": DEFAULT_SIMILARITY_THRESHOLD,
+        "default_model": DEFAULT_MODEL_NAME,
     }
