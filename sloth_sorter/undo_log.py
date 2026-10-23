@@ -51,6 +51,8 @@ class MoveRecord:
     sha256: str
     reverted: int
     timestamp: str
+    original_name: Optional[str] = None
+    new_name: Optional[str] = None
 
 
 def compute_sha256(path: Path, chunk_size: int = 65536) -> str:
@@ -95,11 +97,21 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
                 dest TEXT NOT NULL,
                 size INTEGER NOT NULL,
                 sha256 TEXT NOT NULL,
+                original_name TEXT,
+                new_name TEXT,
                 reverted INTEGER NOT NULL DEFAULT 0,
                 timestamp TEXT NOT NULL
             );
             """
         )
+        # Check migrations for existing databases
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(moves);")
+        existing_cols = [row[1] for row in cursor.fetchall()]
+        if "original_name" not in existing_cols:
+            conn.execute("ALTER TABLE moves ADD COLUMN original_name TEXT;")
+        if "new_name" not in existing_cols:
+            conn.execute("ALTER TABLE moves ADD COLUMN new_name TEXT;")
     return conn
 
 
@@ -125,17 +137,21 @@ def record_move(
     dest: Path,
     size: int,
     sha256: str,
+    original_name: Optional[str] = None,
+    new_name: Optional[str] = None,
 ) -> int:
     """Record a single move in the database."""
     now_iso = datetime.now(timezone.utc).isoformat()
+    orig = original_name or src.name
+    newn = new_name or dest.name
     with get_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute(
             """
-            INSERT INTO moves (batch_id, src, dest, size, sha256, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?);
+            INSERT INTO moves (batch_id, src, dest, size, sha256, original_name, new_name, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
             """,
-            (batch_id, str(src.resolve()), str(dest.resolve()), size, sha256, now_iso),
+            (batch_id, str(src.resolve()), str(dest.resolve()), size, sha256, orig, newn, now_iso),
         )
         return cursor.lastrowid  # type: ignore
 
@@ -244,7 +260,7 @@ def get_moves_for_batch(db_path: Path, batch_id: int) -> List[MoveRecord]:
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT id, batch_id, src, dest, size, sha256, reverted, timestamp
+            SELECT id, batch_id, src, dest, size, sha256, reverted, timestamp, original_name, new_name
             FROM moves
             WHERE batch_id = ?
             ORDER BY id ASC;
@@ -262,6 +278,8 @@ def get_moves_for_batch(db_path: Path, batch_id: int) -> List[MoveRecord]:
                 sha256=row[5],
                 reverted=row[6],
                 timestamp=row[7],
+                original_name=row[8],
+                new_name=row[9],
             )
             for row in rows
         ]

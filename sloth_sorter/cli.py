@@ -74,22 +74,58 @@ def handle_scan(args: argparse.Namespace) -> int:
         console.print("[yellow]No eligible files found to organize.[/yellow]")
         return 0
 
+    smart = getattr(args, "smart", False)
     table = Table(title=f"Discovered Files ({len(files)})", show_lines=False)
     table.add_column("File", style="cyan", no_wrap=True)
     table.add_column("Size", justify="right", style="magenta")
     table.add_column("Category", style="green")
     table.add_column("Confidence", style="yellow")
     table.add_column("Reason", style="dim")
+    if smart:
+        table.add_column("Tier", style="yellow")
+        table.add_column("Score", justify="right", style="magenta")
+
+    clf = None
+    if smart:
+        from sloth_sorter.classifier import get_smart_classifier
+        from sloth_sorter.extractor import extract_text
+
+        model_p = getattr(args, "model_path", None) or "minishlab/potion-base-8M"
+        clf = get_smart_classifier(model_name_or_path=model_p)
 
     for f in files:
         cls_res = classify(f)
-        table.add_row(
-            f.name,
-            format_size(f.size),
-            cls_res.category,
-            cls_res.confidence,
-            cls_res.reason,
-        )
+        cat = cls_res.category
+        tier = "rule"
+        score_disp = "-"
+        if smart and (cls_res.confidence == "low" or cat in ("Other", "Documents")):
+            text = extract_text(f.path)
+            if text and text.strip() and clf is not None:
+                sm = clf.classify_text(text)
+                if sm is not None:
+                    if sm.category != "Other" or cat == "Other":
+                        cat = sm.category
+                        tier = "embedding"
+                        score_disp = f"{sm.score:.2f}"
+
+        if smart:
+            table.add_row(
+                f.name,
+                format_size(f.size),
+                cat,
+                cls_res.confidence,
+                cls_res.reason,
+                tier,
+                score_disp,
+            )
+        else:
+            table.add_row(
+                f.name,
+                format_size(f.size),
+                cat,
+                cls_res.confidence,
+                cls_res.reason,
+            )
 
     console.print(table)
 
@@ -118,30 +154,42 @@ def handle_tidy(args: argparse.Namespace) -> int:
         scan_errors.append(f"{p.name}: {e}")
 
     files = scan_directory(target, recursive=args.recursive, on_error=on_scan_error)
-    moves = build_plan(files, target)
+    moves = build_plan(
+        files=files,
+        target_dir=target,
+        smart=getattr(args, "smart", False),
+        rename=getattr(args, "rename", False),
+        model_path=getattr(args, "model_path", None),
+    )
 
     if not moves:
         console.print("[bold green]Folder is already organized! No moves needed.[/bold green]")
         return 0
 
-    # 1. Preview Table: File | Category | Destination
+    # 1. Preview Table: File | New Name | Category | Tier (rule / embedding) | Score
     preview_table = Table(
         title=f"Plan Preview ({len(moves)} file{'s' if len(moves) != 1 else ''})",
         show_lines=False,
     )
     preview_table.add_column("File", style="cyan", no_wrap=True)
+    preview_table.add_column("New Name", style="bright_cyan")
     preview_table.add_column("Category", style="green")
-    preview_table.add_column("Destination", style="blue")
-    preview_table.add_column("Notes", style="yellow")
+    preview_table.add_column("Tier", style="yellow")
+    preview_table.add_column("Score", justify="right", style="magenta")
 
     for m in moves:
-        # Display destination relative to target folder for readability
-        try:
-            rel_dest = m.dest.relative_to(target)
-        except ValueError:
-            rel_dest = m.dest
-        notes = "[bold yellow]renamed (collision)[/bold yellow]" if m.collision_resolved else ""
-        preview_table.add_row(m.src.name, m.category, str(rel_dest), notes)
+        orig = m.original_name or m.src.name
+        newn = m.new_name or m.dest.name
+        if m.collision_resolved:
+            newn = f"{newn} [yellow](renamed)[/yellow]"
+        score_disp = f"{m.score:.2f}" if m.score is not None else "-"
+        preview_table.add_row(
+            orig,
+            newn,
+            m.category,
+            m.tier,
+            score_disp,
+        )
 
     console.print(preview_table)
 
@@ -337,6 +385,18 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument(
         "-r", "--recursive", action="store_true", help="Recursively scan subdirectories"
     )
+    scan_parser.add_argument(
+        "--smart",
+        action="store_true",
+        default=False,
+        help="Enable Tier 2 embedding classification for ambiguous documents",
+    )
+    scan_parser.add_argument(
+        "--model-path",
+        type=str,
+        default=None,
+        help="Path or HuggingFace ID for Model2Vec model (default: minishlab/potion-base-8M)",
+    )
 
     # tidy
     tidy_parser = subparsers.add_parser("tidy", help="Organize files into category folders")
@@ -349,6 +409,24 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Execute moves (default is dry-run preview)",
+    )
+    tidy_parser.add_argument(
+        "--smart",
+        action="store_true",
+        default=False,
+        help="Enable Tier 2 embedding classification for ambiguous documents",
+    )
+    tidy_parser.add_argument(
+        "--rename",
+        action="store_true",
+        default=False,
+        help="Intelligently rename files using modified date prefix and TF-IDF keywords",
+    )
+    tidy_parser.add_argument(
+        "--model-path",
+        type=str,
+        default=None,
+        help="Path or HuggingFace ID for Model2Vec model (default: minishlab/potion-base-8M)",
     )
 
     # undo

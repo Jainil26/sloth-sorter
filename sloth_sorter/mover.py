@@ -118,6 +118,8 @@ def execute_plan(
                 dest=dest,
                 size=m.size,
                 sha256=file_hash,
+                original_name=getattr(m, "original_name", src.name),
+                new_name=getattr(m, "new_name", dest.name),
             )
 
             report.successful.append(
